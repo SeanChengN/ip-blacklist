@@ -1,0 +1,48 @@
+name: Update IP Blacklist
+
+on: 
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+   
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@main
+
+    - name: Download Source IP List
+      run: | 
+        chmod +x ./cidr-merger
+        echo "">abuseipdb_blacklist_ip_score_100.tmp
+        curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=100 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" >> abuseipdb_blacklist_ip_score_100.tmp || true
+        ./cidr-merger -o abuseipdb_blacklist_ip_score_100.txt abuseipdb_blacklist_ip_score_100.tmp
+        rm -f *.tmp
+
+    - name: Convert Format
+      run: |
+        echo "/ip firewall address-list" > routeros_blacklist_ip.rsc
+        echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> routeros_blacklist_ip.rsc
+        echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> routeros_blacklist_ip.rsc
+        count=0
+        while IFS= read -r line; do
+          echo "add address=$line list=blocked_abuseipdb" >> routeros_blacklist_ip.rsc
+          count=$((count + 1))
+          if [ $((count % 500)) -eq 0 ]; then
+            echo ":delay 5s" >> routeros_blacklist_ip.rsc
+          fi
+        done < abuseipdb_blacklist_ip_score_100.txt
+
+    - name: Commit
+      run: |
+        git config --global user.email action@github.com
+        git config --global user.name GitHub Action
+        git add .
+        git commit -m "Update IP List"
+
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: main 
