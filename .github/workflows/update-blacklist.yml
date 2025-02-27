@@ -14,11 +14,7 @@ jobs:
 
     - name: Download Source IP List
       run: | 
-        chmod +x ./cidr-merger
-        echo "">abuseipdb_blacklist_ip_score_100.tmp
-        curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=100 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" >> abuseipdb_blacklist_ip_score_100.tmp || true
-        ./cidr-merger -o abuseipdb_blacklist_ip_score_100.txt abuseipdb_blacklist_ip_score_100.tmp
-        rm -f *.tmp
+        curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=100 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" >> abuseipdb_blacklist_ip_score_100.txt || true
 
     - name: Convert Format
       run: |
