@@ -32,7 +32,7 @@ jobs:
       run: |
         echo "/ip firewall address-list" > routeros_blacklist_ip.rsc
         echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> routeros_blacklist_ip.rsc
-        echo ":delay 30s" >> routeros_blacklist_ip.rsc
+        echo ":delay 60s" >> routeros_blacklist_ip.rsc
         echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> routeros_blacklist_ip.rsc
         count=0
         while IFS= read -r line; do
