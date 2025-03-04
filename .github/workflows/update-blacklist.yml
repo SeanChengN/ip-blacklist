@@ -43,10 +43,6 @@ jobs:
           fi
         done < aggregated_ips.txt
 
-    - name: Compress Output
-      run: |
-        gzip -9 routeros_blacklist_ip.rsc
-
     - name: Commit
       run: |
         git config --global user.email action@github.com
