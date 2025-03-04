@@ -19,19 +19,33 @@ jobs:
       run: | 
         curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=100 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" >> abuseipdb_blacklist_ip_score_100.txt || true
 
+    - name: Install iprange
+      run: |
+        apt-get update
+        apt-get install -y iprange
+
+    - name: Aggregate IPs
+      run: |
+        sort -u abuseipdb_blacklist_ip_score_100.txt | iprange > aggregated_ips.txt
+
     - name: Convert Format
       run: |
         echo "/ip firewall address-list" > routeros_blacklist_ip.rsc
         echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> routeros_blacklist_ip.rsc
+        echo ":delay 30s" >> routeros_blacklist_ip.rsc
         echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> routeros_blacklist_ip.rsc
         count=0
         while IFS= read -r line; do
           echo "add address=$line list=blocked_abuseipdb" >> routeros_blacklist_ip.rsc
           count=$((count + 1))
-          if [ $((count % 500)) -eq 0 ]; then
-            echo ":delay 5s" >> routeros_blacklist_ip.rsc
+          if [ $((count % 300)) -eq 0 ]; then
+            echo ":delay 10s" >> routeros_blacklist_ip.rsc
           fi
-        done < abuseipdb_blacklist_ip_score_100.txt
+        done < aggregated_ips.txt
+
+    - name: Compress Output
+      run: |
+        gzip -9 routeros_blacklist_ip.rsc
 
     - name: Commit
       run: |
@@ -44,4 +58,4 @@ jobs:
       uses: ad-m/github-push-action@master
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: main 
+        branch: main
