@@ -88,6 +88,7 @@ jobs:
 
         import netaddr
         import sys
+        import ipaddress
 
         # 读取初步聚合的IP列表
         with open('1_initial_aggregated_ips.txt', 'r') as f:
@@ -112,59 +113,76 @@ jobs:
             for network in cidr_merged:
                 f.write(f"{network}\n")
 
-        # 简化版本：按掩码长度过滤网络
-        def filter_by_prefix(networks, max_prefix):
-            """按掩码长度过滤网络"""
-            result = []
-            for network in networks:
-                if network.prefixlen <= max_prefix:
-                    result.append(network)
-                else:
-                    # 尝试创建一个更大的网络
-                    supernet = network.supernet(max_prefix)
-                    result.append(supernet)
-            return netaddr.cidr_merge(result)
+        # 创建不同掩码长度的过滤列表
+        conservative_networks = []  # /24
+        moderate_networks = []      # /20
+        aggressive_networks = []    # /16
 
-        # 保守合并 - 保留/24及更小的网络
-        conservative_result = filter_by_prefix(cidr_merged, 24)
-        print(f"After conservative filter: {len(conservative_result)} networks", file=sys.stderr)
+        # 遍历所有网络，根据掩码长度分类或调整
+        for network in cidr_merged:
+            # 保守合并 - /24
+            if network.prefixlen <= 24:
+                conservative_networks.append(str(network))
+            else:
+                # 将网络扩展到 /24
+                supernet = ipaddress.IPv4Network(str(network)).supernet(new_prefix=24)
+                conservative_networks.append(str(supernet))
+            
+            # 中等合并 - /20
+            if network.prefixlen <= 20:
+                moderate_networks.append(str(network))
+            else:
+                # 将网络扩展到 /20
+                supernet = ipaddress.IPv4Network(str(network)).supernet(new_prefix=20)
+                moderate_networks.append(str(supernet))
+            
+            # 激进合并 - /16
+            if network.prefixlen <= 16:
+                aggressive_networks.append(str(network))
+            else:
+                # 将网络扩展到 /16
+                supernet = ipaddress.IPv4Network(str(network)).supernet(new_prefix=16)
+                aggressive_networks.append(str(supernet))
+
+        # 去重
+        conservative_networks = list(set(conservative_networks))
+        moderate_networks = list(set(moderate_networks))
+        aggressive_networks = list(set(aggressive_networks))
+
+        print(f"After conservative filter: {len(conservative_networks)} networks", file=sys.stderr)
+        print(f"After moderate filter: {len(moderate_networks)} networks", file=sys.stderr)
+        print(f"After aggressive filter: {len(aggressive_networks)} networks", file=sys.stderr)
 
         # 保存保守合并结果
         with open('3_conservative_merged_ips.txt', 'w') as f:
             f.write("# 保守合并 - 将网络扩展到/24\n")
-            f.write(f"# 合并后网络数量: {len(conservative_result)}\n")
-            for network in conservative_result:
+            f.write(f"# 合并后网络数量: {len(conservative_networks)}\n")
+            for network in sorted(conservative_networks):
                 f.write(f"{network}\n")
-
-        # 中等合并 - 保留/20及更小的网络
-        moderate_result = filter_by_prefix(cidr_merged, 20)
-        print(f"After moderate filter: {len(moderate_result)} networks", file=sys.stderr)
 
         # 保存中等合并结果
         with open('4_moderate_merged_ips.txt', 'w') as f:
             f.write("# 中等合并 - 将网络扩展到/20\n")
-            f.write(f"# 合并后网络数量: {len(moderate_result)}\n")
-            for network in moderate_result:
+            f.write(f"# 合并后网络数量: {len(moderate_networks)}\n")
+            for network in sorted(moderate_networks):
                 f.write(f"{network}\n")
-
-        # 激进合并 - 保留/16及更小的网络
-        aggressive_result = filter_by_prefix(cidr_merged, 16)
-        print(f"After aggressive filter: {len(aggressive_result)} networks", file=sys.stderr)
 
         # 保存激进合并结果
         with open('5_aggressive_merged_ips.txt', 'w') as f:
             f.write("# 激进合并 - 将网络扩展到/16\n")
-            f.write(f"# 合并后网络数量: {len(aggressive_result)}\n")
-            for network in aggressive_result:
+            f.write(f"# 合并后网络数量: {len(aggressive_networks)}\n")
+            for network in sorted(aggressive_networks):
                 f.write(f"{network}\n")
 
         # 第五步：限制总数量（如果需要）
         max_networks = 10000  # 设置最大网络数量
 
         # 对保守合并结果进行限制
-        if len(conservative_result) > max_networks:
+        if len(conservative_networks) > max_networks:
             # 按网络大小排序，优先保留较大的网络
-            sorted_networks = sorted(conservative_result, key=lambda x: x.size, reverse=True)
+            sorted_networks = sorted(conservative_networks, 
+                                    key=lambda x: ipaddress.IPv4Network(x).num_addresses, 
+                                    reverse=True)
             limited_conservative = sorted_networks[:max_networks]
             print(f"Limited conservative to {max_networks} largest networks", file=sys.stderr)
             
@@ -172,7 +190,7 @@ jobs:
             with open('6_limited_conservative_ips.txt', 'w') as f:
                 f.write(f"# 限制后的保守合并 - 最多{max_networks}个网络\n")
                 f.write(f"# 合并后网络数量: {len(limited_conservative)}\n")
-                for network in limited_conservative:
+                for network in sorted(limited_conservative):
                     f.write(f"{network}\n")
         else:
             # 如果没有超过限制，复制保守合并结果
@@ -181,9 +199,11 @@ jobs:
                     dst.write(src.read())
 
         # 对中等合并结果进行限制
-        if len(moderate_result) > max_networks:
+        if len(moderate_networks) > max_networks:
             # 按网络大小排序，优先保留较大的网络
-            sorted_networks = sorted(moderate_result, key=lambda x: x.size, reverse=True)
+            sorted_networks = sorted(moderate_networks, 
+                                    key=lambda x: ipaddress.IPv4Network(x).num_addresses, 
+                                    reverse=True)
             limited_moderate = sorted_networks[:max_networks]
             print(f"Limited moderate to {max_networks} largest networks", file=sys.stderr)
             
@@ -191,7 +211,7 @@ jobs:
             with open('7_limited_moderate_ips.txt', 'w') as f:
                 f.write(f"# 限制后的中等合并 - 最多{max_networks}个网络\n")
                 f.write(f"# 合并后网络数量: {len(limited_moderate)}\n")
-                for network in limited_moderate:
+                for network in sorted(limited_moderate):
                     f.write(f"{network}\n")
         else:
             # 如果没有超过限制，复制中等合并结果
@@ -200,9 +220,11 @@ jobs:
                     dst.write(src.read())
 
         # 对激进合并结果进行限制
-        if len(aggressive_result) > max_networks:
+        if len(aggressive_networks) > max_networks:
             # 按网络大小排序，优先保留较大的网络
-            sorted_networks = sorted(aggressive_result, key=lambda x: x.size, reverse=True)
+            sorted_networks = sorted(aggressive_networks, 
+                                    key=lambda x: ipaddress.IPv4Network(x).num_addresses, 
+                                    reverse=True)
             limited_aggressive = sorted_networks[:max_networks]
             print(f"Limited aggressive to {max_networks} largest networks", file=sys.stderr)
             
@@ -210,7 +232,7 @@ jobs:
             with open('8_limited_aggressive_ips.txt', 'w') as f:
                 f.write(f"# 限制后的激进合并 - 最多{max_networks}个网络\n")
                 f.write(f"# 合并后网络数量: {len(limited_aggressive)}\n")
-                for network in limited_aggressive:
+                for network in sorted(limited_aggressive):
                     f.write(f"{network}\n")
         else:
             # 如果没有超过限制，复制激进合并结果
