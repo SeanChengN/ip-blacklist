@@ -36,6 +36,7 @@ jobs:
         
         import netaddr
         import sys
+        import copy
         
         # 读取初步聚合的IP列表
         with open('1_initial_aggregated_ips.txt', 'r') as f:
@@ -60,79 +61,72 @@ jobs:
             for network in cidr_merged:
                 f.write(f"{network}\n")
         
-        # 第二步：使用更简单但有效的方法进行激进合并
-        def simplified_aggressive_merge(networks, max_supernet_size=24, max_extra_ips=256):
+        # 第二步：保守合并 - 尝试将网络扩展到更大的掩码
+        def conservative_merge(networks, max_prefix=24):
             """
-            简化的激进合并方法
-            max_supernet_size: 允许合并的最大超网掩码长度（较小的值表示更大的网络）
-            max_extra_ips: 允许包含的最大额外IP数量
+            保守合并 - 尝试将网络扩展到更大的掩码
+            max_prefix: 允许的最大掩码长度（较小的值表示更大的网络）
             """
-            # 按子网掩码长度排序（从大到小）
-            networks.sort(key=lambda x: x.prefixlen, reverse=True)
-            
-            # 尝试将每个网络合并到更大的超网中
             result = []
-            for network in networks:
-                # 尝试不同的超网掩码长度
-                merged = False
-                for supernet_size in range(network.prefixlen - 1, max_supernet_size - 1, -1):
-                    # 创建一个可能的超网
-                    supernet = network.supernet(prefixlen=supernet_size)
-                    
-                    # 检查这个超网是否会包含太多额外的IP
-                    extra_ips = supernet.size - network.size
-                    if extra_ips <= max_extra_ips:
-                        result.append(supernet)
-                        merged = True
-                        break
-                
-                if not merged:
-                    result.append(network)
             
-            # 再次进行标准CIDR合并，移除重叠
+            # 按掩码长度排序（从大到小）
+            sorted_networks = sorted(networks, key=lambda x: x.prefixlen, reverse=True)
+            
+            for network in sorted_networks:
+                # 如果网络已经是最大掩码或更小，直接添加
+                if network.prefixlen <= max_prefix:
+                    result.append(network)
+                    continue
+                
+                # 尝试扩展到目标掩码
+                target_prefix = max(network.prefixlen - 1, max_prefix)
+                supernet = network.supernet(target_prefix)
+                result.append(supernet)
+            
+            # 再次合并，移除重叠
             return netaddr.cidr_merge(result)
         
-        # 执行简化的激进合并 - 保守设置
-        conservative_merged = simplified_aggressive_merge(list(cidr_merged), max_supernet_size=24, max_extra_ips=256)
-        print(f"After conservative aggressive merge: {len(conservative_merged)} networks", file=sys.stderr)
+        # 执行保守合并
+        conservative_result = conservative_merge(cidr_merged, max_prefix=24)
+        print(f"After conservative merge: {len(conservative_result)} networks", file=sys.stderr)
         
         # 保存保守合并结果
         with open('3_conservative_merged_ips.txt', 'w') as f:
-            f.write("# 保守激进合并 - 允许最多256个额外IP，最大超网掩码为/24\n")
-            f.write(f"# 合并后网络数量: {len(conservative_merged)}\n")
-            for network in conservative_merged:
+            f.write("# 保守合并 - 将网络扩展到/24\n")
+            f.write(f"# 合并后网络数量: {len(conservative_result)}\n")
+            for network in conservative_result:
                 f.write(f"{network}\n")
         
-        # 执行简化的激进合并 - 中等设置
-        moderate_merged = simplified_aggressive_merge(list(cidr_merged), max_supernet_size=20, max_extra_ips=1024)
-        print(f"After moderate aggressive merge: {len(moderate_merged)} networks", file=sys.stderr)
+        # 第三步：中等合并 - 扩展到更大的掩码
+        moderate_result = conservative_merge(cidr_merged, max_prefix=20)
+        print(f"After moderate merge: {len(moderate_result)} networks", file=sys.stderr)
         
         # 保存中等合并结果
         with open('4_moderate_merged_ips.txt', 'w') as f:
-            f.write("# 中等激进合并 - 允许最多1024个额外IP，最大超网掩码为/20\n")
-            f.write(f"# 合并后网络数量: {len(moderate_merged)}\n")
-            for network in moderate_merged:
+            f.write("# 中等合并 - 将网络扩展到/20\n")
+            f.write(f"# 合并后网络数量: {len(moderate_result)}\n")
+            for network in moderate_result:
                 f.write(f"{network}\n")
         
-        # 执行简化的激进合并 - 激进设置
-        aggressive_merged = simplified_aggressive_merge(list(cidr_merged), max_supernet_size=16, max_extra_ips=4096)
-        print(f"After aggressive merge: {len(aggressive_merged)} networks", file=sys.stderr)
+        # 第四步：激进合并 - 扩展到更大的掩码
+        aggressive_result = conservative_merge(cidr_merged, max_prefix=16)
+        print(f"After aggressive merge: {len(aggressive_result)} networks", file=sys.stderr)
         
         # 保存激进合并结果
         with open('5_aggressive_merged_ips.txt', 'w') as f:
-            f.write("# 激进合并 - 允许最多4096个额外IP，最大超网掩码为/16\n")
-            f.write(f"# 合并后网络数量: {len(aggressive_merged)}\n")
-            for network in aggressive_merged:
+            f.write("# 激进合并 - 将网络扩展到/16\n")
+            f.write(f"# 合并后网络数量: {len(aggressive_result)}\n")
+            for network in aggressive_result:
                 f.write(f"{network}\n")
         
-        # 第三步：限制总数量（如果需要）
+        # 第五步：限制总数量（如果需要）
         max_networks = 10000  # 设置最大网络数量
         
         # 对保守合并结果进行限制
-        if len(conservative_merged) > max_networks:
+        if len(conservative_result) > max_networks:
             # 按网络大小排序，优先保留较大的网络
-            conservative_merged.sort(key=lambda x: x.size, reverse=True)
-            limited_conservative = conservative_merged[:max_networks]
+            sorted_networks = sorted(conservative_result, key=lambda x: x.size, reverse=True)
+            limited_conservative = sorted_networks[:max_networks]
             print(f"Limited conservative to {max_networks} largest networks", file=sys.stderr)
             
             # 保存限制后的保守合并结果
@@ -148,10 +142,10 @@ jobs:
                     dst.write(src.read())
         
         # 对中等合并结果进行限制
-        if len(moderate_merged) > max_networks:
+        if len(moderate_result) > max_networks:
             # 按网络大小排序，优先保留较大的网络
-            moderate_merged.sort(key=lambda x: x.size, reverse=True)
-            limited_moderate = moderate_merged[:max_networks]
+            sorted_networks = sorted(moderate_result, key=lambda x: x.size, reverse=True)
+            limited_moderate = sorted_networks[:max_networks]
             print(f"Limited moderate to {max_networks} largest networks", file=sys.stderr)
             
             # 保存限制后的中等合并结果
@@ -167,10 +161,10 @@ jobs:
                     dst.write(src.read())
         
         # 对激进合并结果进行限制
-        if len(aggressive_merged) > max_networks:
+        if len(aggressive_result) > max_networks:
             # 按网络大小排序，优先保留较大的网络
-            aggressive_merged.sort(key=lambda x: x.size, reverse=True)
-            limited_aggressive = aggressive_merged[:max_networks]
+            sorted_networks = sorted(aggressive_result, key=lambda x: x.size, reverse=True)
+            limited_aggressive = sorted_networks[:max_networks]
             print(f"Limited aggressive to {max_networks} largest networks", file=sys.stderr)
             
             # 保存限制后的激进合并结果
@@ -227,60 +221,60 @@ jobs:
           echo "$(basename "$file"): $count"
         done
         
-        - name: Create Summary File
-        run: |
-          echo "# AbuseIPDB 黑名单聚合结果汇总" > SUMMARY.md
-          echo "生成时间: $(date)" >> SUMMARY.md
-          echo "" >> SUMMARY.md
-          echo "## 各阶段文件说明" >> SUMMARY.md
-          echo "" >> SUMMARY.md
-          echo "| 文件名 | 描述 | IP数量 |" >> SUMMARY.md
-          echo "|--------|------|--------|" >> SUMMARY.md
+    - name: Create Summary File
+      run: |
+        echo "# AbuseIPDB 黑名单聚合结果汇总" > SUMMARY.md
+        echo "生成时间: $(date)" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "## 各阶段文件说明" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "| 文件名 | 描述 | IP数量 |" >> SUMMARY.md
+        echo "|--------|------|--------|" >> SUMMARY.md
+        
+        for file in {1..8}_*_ips.txt; do
+          description=$(head -n 1 "$file" | sed 's/^# //')
+          count=$(grep -v "^#" "$file" | wc -l)
+          echo "| $(basename "$file") | $description | $count |" >> SUMMARY.md
+        done
+        
+        echo "" >> SUMMARY.md
+        echo "## RouterOS脚本文件" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "| 脚本文件 | 对应IP列表 | IP数量 |" >> SUMMARY.md
+        echo "|----------|------------|--------|" >> SUMMARY.md
+        
+        for script in routeros_*.rsc; do
+          ip_file=$(echo "$script" | sed 's/routeros_//' | sed 's/\.rsc//')
+          count=$(grep -v "^#" "${ip_file}.txt" | wc -l)
+          echo "| $script | ${ip_file}.txt | $count |" >> SUMMARY.md
+        done
+        
+        echo "" >> SUMMARY.md
+        echo "## 使用建议" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "- 如果您的设备性能较好，建议使用 routeros_1_initial_aggregated_ips.rsc 或 routeros_2_standard_merged_ips.rsc" >> SUMMARY.md
+        echo "- 如果您的设备性能一般，建议使用 routeros_3_conservative_merged_ips.rsc 或 routeros_6_limited_conservative_ips.rsc" >> SUMMARY.md
+        echo "- 如果您的设备性能较差，建议使用 routeros_4_moderate_merged_ips.rsc 或 routeros_7_limited_moderate_ips.rsc" >> SUMMARY.md
+        echo "- 如果您的设备性能非常有限，建议使用 routeros_5_aggressive_merged_ips.rsc 或 routeros_8_limited_aggressive_ips.rsc" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "注意：合并级别越高，可能会包含更多的非恶意IP地址。请根据您的网络环境和安全需求选择合适的列表。" >> SUMMARY.md
+        
+    - name: Commit
+      run: |
+        git config --global user.email action@github.com
+        git config --global user.name GitHub Action
+        
+        # 添加所有生成的文件
+        git add abuseipdb_blacklist_raw.txt
+        git add {1..8}_*_ips.txt
+        git add routeros_*.rsc
+        git add SUMMARY.md
+
+        git commit -m "Update IP Blacklist - $(date)"
           
-          for file in {1..8}_*_ips.txt; do
-            description=$(head -n 1 "$file" | sed 's/^# //')
-            count=$(grep -v "^#" "$file" | wc -l)
-            echo "| $(basename "$file") | $description | $count |" >> SUMMARY.md
-          done
-          
-          echo "" >> SUMMARY.md
-          echo "## RouterOS脚本文件" >> SUMMARY.md
-          echo "" >> SUMMARY.md
-          echo "| 脚本文件 | 对应IP列表 | IP数量 |" >> SUMMARY.md
-          echo "|----------|------------|--------|" >> SUMMARY.md
-          
-          for script in routeros_*.rsc; do
-            ip_file=$(echo "$script" | sed 's/routeros_//' | sed 's/\.rsc//')
-            count=$(grep -v "^#" "${ip_file}.txt" | wc -l)
-            echo "| $script | ${ip_file}.txt | $count |" >> SUMMARY.md
-          done
-          
-          echo "" >> SUMMARY.md
-          echo "## 使用建议" >> SUMMARY.md
-          echo "" >> SUMMARY.md
-          echo "- 如果您的设备性能较好，建议使用 routeros_1_initial_aggregated_ips.rsc 或 routeros_2_standard_merged_ips.rsc" >> SUMMARY.md
-          echo "- 如果您的设备性能一般，建议使用 routeros_3_conservative_merged_ips.rsc 或 routeros_6_limited_conservative_ips.rsc" >> SUMMARY.md
-          echo "- 如果您的设备性能较差，建议使用 routeros_4_moderate_merged_ips.rsc 或 routeros_7_limited_moderate_ips.rsc" >> SUMMARY.md
-          echo "- 如果您的设备性能非常有限，建议使用 routeros_5_aggressive_merged_ips.rsc 或 routeros_8_limited_aggressive_ips.rsc" >> SUMMARY.md
-          echo "" >> SUMMARY.md
-          echo "注意：合并级别越高，可能会包含更多的非恶意IP地址。请根据您的网络环境和安全需求选择合适的列表。" >> SUMMARY.md
-          
-        - name: Commit
-        run: |
-          git config --global user.email action@github.com
-          git config --global user.name GitHub Action
-          
-          # 添加所有生成的文件
-          git add abuseipdb_blacklist_raw.txt
-          git add {1..8}_*_ips.txt
-          git add routeros_*.rsc
-          git add SUMMARY.md
-          
-          git commit -m "Update IP Blacklist - $(date)"
-          
-        - name: Push changes
-        uses: ad-m/github-push-action@master
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          branch: main
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        branch: main
   
