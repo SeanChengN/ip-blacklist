@@ -1,6 +1,6 @@
 # IP Blacklist
 
-![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/SeanChengN/ip-blacklist/update-ip-blacklist.yml?style=for-the-badge)
+![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/SeanChengN/ip-blacklist/update-blacklist.yml?style=for-the-badge)
 ![GitHub repo size](https://img.shields.io/github/repo-size/SeanChengN/ip-blacklist?style=for-the-badge)
 
 95% confidence malicious IP list from [AbuseIPDB](https://www.abuseipdb.com/). Updated 1 time per day.
