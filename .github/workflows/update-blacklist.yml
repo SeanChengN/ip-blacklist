@@ -33,15 +33,14 @@ jobs:
       run: |
         cat > aggregate_ips.py << 'EOF'
         #!/usr/bin/env python3
-        
+
         import netaddr
         import sys
-        import copy
-        
+
         # 读取初步聚合的IP列表
         with open('1_initial_aggregated_ips.txt', 'r') as f:
             ip_ranges = [line.strip() for line in f if line.strip()]
-        
+
         # 转换为netaddr对象
         ip_sets = []
         for ip_range in ip_ranges:
@@ -49,18 +48,18 @@ jobs:
                 ip_sets.append(netaddr.IPNetwork(ip_range))
             except:
                 print(f"Warning: Could not parse {ip_range}", file=sys.stderr)
-        
+
         # 第一步：标准聚合 - 合并相邻网络
         cidr_merged = netaddr.cidr_merge(ip_sets)
         print(f"After standard CIDR merge: {len(cidr_merged)} networks", file=sys.stderr)
-        
+
         # 保存第一步结果
         with open('2_standard_merged_ips.txt', 'w') as f:
             f.write("# 标准CIDR合并 - 仅合并相邻网络\n")
             f.write(f"# 合并后网络数量: {len(cidr_merged)}\n")
             for network in cidr_merged:
                 f.write(f"{network}\n")
-        
+
         # 第二步：保守合并 - 尝试将网络扩展到更大的掩码
         def conservative_merge(networks, max_prefix=24):
             """
@@ -85,43 +84,43 @@ jobs:
             
             # 再次合并，移除重叠
             return netaddr.cidr_merge(result)
-        
+
         # 执行保守合并
         conservative_result = conservative_merge(cidr_merged, max_prefix=24)
         print(f"After conservative merge: {len(conservative_result)} networks", file=sys.stderr)
-        
+
         # 保存保守合并结果
         with open('3_conservative_merged_ips.txt', 'w') as f:
             f.write("# 保守合并 - 将网络扩展到/24\n")
             f.write(f"# 合并后网络数量: {len(conservative_result)}\n")
             for network in conservative_result:
                 f.write(f"{network}\n")
-        
+
         # 第三步：中等合并 - 扩展到更大的掩码
         moderate_result = conservative_merge(cidr_merged, max_prefix=20)
         print(f"After moderate merge: {len(moderate_result)} networks", file=sys.stderr)
-        
+
         # 保存中等合并结果
         with open('4_moderate_merged_ips.txt', 'w') as f:
             f.write("# 中等合并 - 将网络扩展到/20\n")
             f.write(f"# 合并后网络数量: {len(moderate_result)}\n")
             for network in moderate_result:
                 f.write(f"{network}\n")
-        
+
         # 第四步：激进合并 - 扩展到更大的掩码
         aggressive_result = conservative_merge(cidr_merged, max_prefix=16)
         print(f"After aggressive merge: {len(aggressive_result)} networks", file=sys.stderr)
-        
+
         # 保存激进合并结果
         with open('5_aggressive_merged_ips.txt', 'w') as f:
             f.write("# 激进合并 - 将网络扩展到/16\n")
             f.write(f"# 合并后网络数量: {len(aggressive_result)}\n")
             for network in aggressive_result:
                 f.write(f"{network}\n")
-        
+
         # 第五步：限制总数量（如果需要）
         max_networks = 10000  # 设置最大网络数量
-        
+
         # 对保守合并结果进行限制
         if len(conservative_result) > max_networks:
             # 按网络大小排序，优先保留较大的网络
@@ -140,7 +139,7 @@ jobs:
             with open('3_conservative_merged_ips.txt', 'r') as src:
                 with open('6_limited_conservative_ips.txt', 'w') as dst:
                     dst.write(src.read())
-        
+
         # 对中等合并结果进行限制
         if len(moderate_result) > max_networks:
             # 按网络大小排序，优先保留较大的网络
@@ -159,7 +158,7 @@ jobs:
             with open('4_moderate_merged_ips.txt', 'r') as src:
                 with open('7_limited_moderate_ips.txt', 'w') as dst:
                     dst.write(src.read())
-        
+
         # 对激进合并结果进行限制
         if len(aggressive_result) > max_networks:
             # 按网络大小排序，优先保留较大的网络
@@ -178,7 +177,7 @@ jobs:
             with open('5_aggressive_merged_ips.txt', 'r') as src:
                 with open('8_limited_aggressive_ips.txt', 'w') as dst:
                     dst.write(src.read())
-        
+
         print(f"Processing complete. Generated multiple levels of IP aggregation.", file=sys.stderr)
         EOF
         
