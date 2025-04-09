@@ -61,7 +61,6 @@ jobs:
                 f.write(f"{network}\n")
         
         # 第二步：使用更简单但有效的方法进行激进合并
-        # 我们将按照子网掩码长度分组，然后尝试将较小的子网合并到较大的子网中
         def simplified_aggressive_merge(networks, max_supernet_size=24, max_extra_ips=256):
             """
             简化的激进合并方法
@@ -94,7 +93,7 @@ jobs:
             return netaddr.cidr_merge(result)
         
         # 执行简化的激进合并 - 保守设置
-        conservative_merged = simplified_aggressive_merge(cidr_merged.copy(), max_supernet_size=24, max_extra_ips=256)
+        conservative_merged = simplified_aggressive_merge(list(cidr_merged), max_supernet_size=24, max_extra_ips=256)
         print(f"After conservative aggressive merge: {len(conservative_merged)} networks", file=sys.stderr)
         
         # 保存保守合并结果
@@ -105,7 +104,7 @@ jobs:
                 f.write(f"{network}\n")
         
         # 执行简化的激进合并 - 中等设置
-        moderate_merged = simplified_aggressive_merge(cidr_merged.copy(), max_supernet_size=20, max_extra_ips=1024)
+        moderate_merged = simplified_aggressive_merge(list(cidr_merged), max_supernet_size=20, max_extra_ips=1024)
         print(f"After moderate aggressive merge: {len(moderate_merged)} networks", file=sys.stderr)
         
         # 保存中等合并结果
@@ -116,7 +115,7 @@ jobs:
                 f.write(f"{network}\n")
         
         # 执行简化的激进合并 - 激进设置
-        aggressive_merged = simplified_aggressive_merge(cidr_merged.copy(), max_supernet_size=16, max_extra_ips=4096)
+        aggressive_merged = simplified_aggressive_merge(list(cidr_merged), max_supernet_size=16, max_extra_ips=4096)
         print(f"After aggressive merge: {len(aggressive_merged)} networks", file=sys.stderr)
         
         # 保存激进合并结果
@@ -127,7 +126,7 @@ jobs:
                 f.write(f"{network}\n")
         
         # 第三步：限制总数量（如果需要）
-        max_networks = 20000  # 设置最大网络数量
+        max_networks = 10000  # 设置最大网络数量
         
         # 对保守合并结果进行限制
         if len(conservative_merged) > max_networks:
@@ -228,59 +227,60 @@ jobs:
           echo "$(basename "$file"): $count"
         done
         
-    - name: Create Summary File
-      run: |
-        echo "# AbuseIPDB 黑名单聚合结果汇总" > SUMMARY.md
-        echo "生成时间: $(date)" >> SUMMARY.md
-        echo "" >> SUMMARY.md
-        echo "## 各阶段文件说明" >> SUMMARY.md
-        echo "" >> SUMMARY.md
-        echo "| 文件名 | 描述 | IP数量 |" >> SUMMARY.md
-        echo "|--------|------|--------|" >> SUMMARY.md
-        
-        for file in {1..8}_*_ips.txt; do
-          description=$(head -n 1 "$file" | sed 's/^# //')
-          count=$(grep -v "^#" "$file" | wc -l)
-          echo "| $(basename "$file") | $description | $count |" >> SUMMARY.md
-        done
-        
-        echo "" >> SUMMARY.md
-        echo "## RouterOS脚本文件" >> SUMMARY.md
-        echo "" >> SUMMARY.md
-        echo "| 脚本文件 | 对应IP列表 | IP数量 |" >> SUMMARY.md
-        echo "|----------|------------|--------|" >> SUMMARY.md
-        
-        for script in routeros_*.rsc; do
-          ip_file=$(echo "$script" | sed 's/routeros_//' | sed 's/\.rsc//')
-          count=$(grep -v "^#" "${ip_file}.txt" | wc -l)
-          echo "| $script | ${ip_file}.txt | $count |" >> SUMMARY.md
-        done
-        
-        echo "" >> SUMMARY.md
-        echo "## 使用建议" >> SUMMARY.md
-        echo "" >> SUMMARY.md
-        echo "- 如果您的设备性能较好，建议使用 routeros_1_initial_aggregated_ips.rsc 或 routeros_2_standard_merged_ips.rsc" >> SUMMARY.md
-        echo "- 如果您的设备性能一般，建议使用 routeros_3_conservative_merged_ips.rsc 或 routeros_6_limited_conservative_ips.rsc" >> SUMMARY.md
-        echo "- 如果您的设备性能较差，建议使用 routeros_4_moderate_merged_ips.rsc 或 routeros_7_limited_moderate_ips.rsc" >> SUMMARY.md
-        echo "- 如果您的设备性能非常有限，建议使用 routeros_5_aggressive_merged_ips.rsc 或 routeros_8_limited_aggressive_ips.rsc" >> SUMMARY.md
-        echo "" >> SUMMARY.md
-        echo "注意：合并级别越高，可能会包含更多的非恶意IP地址。请根据您的网络环境和安全需求选择合适的列表。" >> SUMMARY.md
-        
-    - name: Commit
-      run: |
-        git config --global user.email action@github.com
-        git config --global user.name GitHub Action
-        
-        # 添加所有生成的文件
-        git add abuseipdb_blacklist_raw.txt
-        git add {1..8}_*_ips.txt
-        git add routeros_*.rsc
-        git add SUMMARY.md
-        
-        git commit -m "Update IP Blacklist - $(date)"
-        
-    - name: Push changes
-      uses: ad-m/github-push-action@master
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        branch: main
+        - name: Create Summary File
+        run: |
+          echo "# AbuseIPDB 黑名单聚合结果汇总" > SUMMARY.md
+          echo "生成时间: $(date)" >> SUMMARY.md
+          echo "" >> SUMMARY.md
+          echo "## 各阶段文件说明" >> SUMMARY.md
+          echo "" >> SUMMARY.md
+          echo "| 文件名 | 描述 | IP数量 |" >> SUMMARY.md
+          echo "|--------|------|--------|" >> SUMMARY.md
+          
+          for file in {1..8}_*_ips.txt; do
+            description=$(head -n 1 "$file" | sed 's/^# //')
+            count=$(grep -v "^#" "$file" | wc -l)
+            echo "| $(basename "$file") | $description | $count |" >> SUMMARY.md
+          done
+          
+          echo "" >> SUMMARY.md
+          echo "## RouterOS脚本文件" >> SUMMARY.md
+          echo "" >> SUMMARY.md
+          echo "| 脚本文件 | 对应IP列表 | IP数量 |" >> SUMMARY.md
+          echo "|----------|------------|--------|" >> SUMMARY.md
+          
+          for script in routeros_*.rsc; do
+            ip_file=$(echo "$script" | sed 's/routeros_//' | sed 's/\.rsc//')
+            count=$(grep -v "^#" "${ip_file}.txt" | wc -l)
+            echo "| $script | ${ip_file}.txt | $count |" >> SUMMARY.md
+          done
+          
+          echo "" >> SUMMARY.md
+          echo "## 使用建议" >> SUMMARY.md
+          echo "" >> SUMMARY.md
+          echo "- 如果您的设备性能较好，建议使用 routeros_1_initial_aggregated_ips.rsc 或 routeros_2_standard_merged_ips.rsc" >> SUMMARY.md
+          echo "- 如果您的设备性能一般，建议使用 routeros_3_conservative_merged_ips.rsc 或 routeros_6_limited_conservative_ips.rsc" >> SUMMARY.md
+          echo "- 如果您的设备性能较差，建议使用 routeros_4_moderate_merged_ips.rsc 或 routeros_7_limited_moderate_ips.rsc" >> SUMMARY.md
+          echo "- 如果您的设备性能非常有限，建议使用 routeros_5_aggressive_merged_ips.rsc 或 routeros_8_limited_aggressive_ips.rsc" >> SUMMARY.md
+          echo "" >> SUMMARY.md
+          echo "注意：合并级别越高，可能会包含更多的非恶意IP地址。请根据您的网络环境和安全需求选择合适的列表。" >> SUMMARY.md
+          
+        - name: Commit
+        run: |
+          git config --global user.email action@github.com
+          git config --global user.name GitHub Action
+          
+          # 添加所有生成的文件
+          git add abuseipdb_blacklist_raw.txt
+          git add {1..8}_*_ips.txt
+          git add routeros_*.rsc
+          git add SUMMARY.md
+          
+          git commit -m "Update IP Blacklist - $(date)"
+          
+        - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: main
+  
