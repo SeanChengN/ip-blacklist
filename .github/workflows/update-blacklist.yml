@@ -17,7 +17,7 @@ jobs:
       
     - name: Download Source IP List
       run: |
-        curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=95 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" > abuseipdb_blacklist_ip.txt || true
+        curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=95 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" > abuseipdb_blacklist_raw.txt || true
         
     - name: Install required tools
       run: |
@@ -27,7 +27,7 @@ jobs:
         
     - name: Initial IP Aggregation
       run: |
-        sort -u abuseipdb_blacklist_ip.txt | iprange > initial_aggregated_ips.txt
+        sort -u abuseipdb_blacklist_raw.txt | iprange > 1_initial_aggregated_ips.txt
         
     - name: Advanced IP Aggregation
       run: |
@@ -38,7 +38,7 @@ jobs:
         import sys
         
         # 读取初步聚合的IP列表
-        with open('initial_aggregated_ips.txt', 'r') as f:
+        with open('1_initial_aggregated_ips.txt', 'r') as f:
             ip_ranges = [line.strip() for line in f if line.strip()]
         
         # 转换为netaddr对象
@@ -54,72 +54,139 @@ jobs:
         print(f"After standard CIDR merge: {len(cidr_merged)} networks", file=sys.stderr)
         
         # 保存第一步结果
-        with open('step1_standard_merged_ips.txt', 'w') as f:
+        with open('2_standard_merged_ips.txt', 'w') as f:
+            f.write("# 标准CIDR合并 - 仅合并相邻网络\n")
+            f.write(f"# 合并后网络数量: {len(cidr_merged)}\n")
             for network in cidr_merged:
                 f.write(f"{network}\n")
         
-        # 第二步：更激进的聚合 - 合并有少量间隔的网络
-        def aggressive_merge(networks, max_gap=256):
+        # 第二步：使用更简单但有效的方法进行激进合并
+        # 我们将按照子网掩码长度分组，然后尝试将较小的子网合并到较大的子网中
+        def simplified_aggressive_merge(networks, max_supernet_size=24, max_extra_ips=256):
             """
-            更激进地合并网络，允许有一定的间隔
-            max_gap: 允许的最大间隔（IP地址数量）
+            简化的激进合并方法
+            max_supernet_size: 允许合并的最大超网掩码长度（较小的值表示更大的网络）
+            max_extra_ips: 允许包含的最大额外IP数量
             """
-            if not networks:
-                return []
-                
-            # 按起始地址排序
-            sorted_nets = sorted(networks, key=lambda x: x.first)
-            merged = [sorted_nets[0]]
+            # 按子网掩码长度排序（从大到小）
+            networks.sort(key=lambda x: x.prefixlen, reverse=True)
             
-            for current in sorted_nets[1:]:
-                previous = merged[-1]
+            # 尝试将每个网络合并到更大的超网中
+            result = []
+            for network in networks:
+                # 尝试不同的超网掩码长度
+                merged = False
+                for supernet_size in range(network.prefixlen - 1, max_supernet_size - 1, -1):
+                    # 创建一个可能的超网
+                    supernet = network.supernet(prefixlen=supernet_size)
+                    
+                    # 检查这个超网是否会包含太多额外的IP
+                    extra_ips = supernet.size - network.size
+                    if extra_ips <= max_extra_ips:
+                        result.append(supernet)
+                        merged = True
+                        break
                 
-                # 如果当前网络的起始地址与前一个网络的结束地址相差不大
-                if int(current.first) - int(previous.last) <= max_gap:
-                    # 创建一个新的网络，包含两个网络的范围
-                    combined = netaddr.IPRange(previous.first, max(previous.last, current.last))
-                    # 转换为CIDR表示
-                    cidrs = combined.cidrs()
-                    if len(cidrs) == 1:
-                        merged[-1] = cidrs[0]
-                    else:
-                        # 如果不能用单个CIDR表示，使用最小的CIDR集合
-                        merged[-1] = cidrs[0]
-                        for cidr in cidrs[1:]:
-                            merged.append(cidr)
-                else:
-                    merged.append(current)
+                if not merged:
+                    result.append(network)
             
-            return merged
+            # 再次进行标准CIDR合并，移除重叠
+            return netaddr.cidr_merge(result)
         
-        # 执行激进合并
-        aggressive_merged = aggressive_merge(cidr_merged)
+        # 执行简化的激进合并 - 保守设置
+        conservative_merged = simplified_aggressive_merge(cidr_merged.copy(), max_supernet_size=24, max_extra_ips=256)
+        print(f"After conservative aggressive merge: {len(conservative_merged)} networks", file=sys.stderr)
+        
+        # 保存保守合并结果
+        with open('3_conservative_merged_ips.txt', 'w') as f:
+            f.write("# 保守激进合并 - 允许最多256个额外IP，最大超网掩码为/24\n")
+            f.write(f"# 合并后网络数量: {len(conservative_merged)}\n")
+            for network in conservative_merged:
+                f.write(f"{network}\n")
+        
+        # 执行简化的激进合并 - 中等设置
+        moderate_merged = simplified_aggressive_merge(cidr_merged.copy(), max_supernet_size=20, max_extra_ips=1024)
+        print(f"After moderate aggressive merge: {len(moderate_merged)} networks", file=sys.stderr)
+        
+        # 保存中等合并结果
+        with open('4_moderate_merged_ips.txt', 'w') as f:
+            f.write("# 中等激进合并 - 允许最多1024个额外IP，最大超网掩码为/20\n")
+            f.write(f"# 合并后网络数量: {len(moderate_merged)}\n")
+            for network in moderate_merged:
+                f.write(f"{network}\n")
+        
+        # 执行简化的激进合并 - 激进设置
+        aggressive_merged = simplified_aggressive_merge(cidr_merged.copy(), max_supernet_size=16, max_extra_ips=4096)
         print(f"After aggressive merge: {len(aggressive_merged)} networks", file=sys.stderr)
         
-        # 保存第二步结果
-        with open('step2_aggressive_merged_ips.txt', 'w') as f:
+        # 保存激进合并结果
+        with open('5_aggressive_merged_ips.txt', 'w') as f:
+            f.write("# 激进合并 - 允许最多4096个额外IP，最大超网掩码为/16\n")
+            f.write(f"# 合并后网络数量: {len(aggressive_merged)}\n")
             for network in aggressive_merged:
                 f.write(f"{network}\n")
         
         # 第三步：限制总数量（如果需要）
         max_networks = 20000  # 设置最大网络数量
+        
+        # 对保守合并结果进行限制
+        if len(conservative_merged) > max_networks:
+            # 按网络大小排序，优先保留较大的网络
+            conservative_merged.sort(key=lambda x: x.size, reverse=True)
+            limited_conservative = conservative_merged[:max_networks]
+            print(f"Limited conservative to {max_networks} largest networks", file=sys.stderr)
+            
+            # 保存限制后的保守合并结果
+            with open('6_limited_conservative_ips.txt', 'w') as f:
+                f.write(f"# 限制后的保守合并 - 最多{max_networks}个网络\n")
+                f.write(f"# 合并后网络数量: {len(limited_conservative)}\n")
+                for network in limited_conservative:
+                    f.write(f"{network}\n")
+        else:
+            # 如果没有超过限制，复制保守合并结果
+            with open('3_conservative_merged_ips.txt', 'r') as src:
+                with open('6_limited_conservative_ips.txt', 'w') as dst:
+                    dst.write(src.read())
+        
+        # 对中等合并结果进行限制
+        if len(moderate_merged) > max_networks:
+            # 按网络大小排序，优先保留较大的网络
+            moderate_merged.sort(key=lambda x: x.size, reverse=True)
+            limited_moderate = moderate_merged[:max_networks]
+            print(f"Limited moderate to {max_networks} largest networks", file=sys.stderr)
+            
+            # 保存限制后的中等合并结果
+            with open('7_limited_moderate_ips.txt', 'w') as f:
+                f.write(f"# 限制后的中等合并 - 最多{max_networks}个网络\n")
+                f.write(f"# 合并后网络数量: {len(limited_moderate)}\n")
+                for network in limited_moderate:
+                    f.write(f"{network}\n")
+        else:
+            # 如果没有超过限制，复制中等合并结果
+            with open('4_moderate_merged_ips.txt', 'r') as src:
+                with open('7_limited_moderate_ips.txt', 'w') as dst:
+                    dst.write(src.read())
+        
+        # 对激进合并结果进行限制
         if len(aggressive_merged) > max_networks:
             # 按网络大小排序，优先保留较大的网络
             aggressive_merged.sort(key=lambda x: x.size, reverse=True)
-            limited_merged = aggressive_merged[:max_networks]
-            print(f"Limited to {max_networks} largest networks", file=sys.stderr)
+            limited_aggressive = aggressive_merged[:max_networks]
+            print(f"Limited aggressive to {max_networks} largest networks", file=sys.stderr)
             
-            # 保存第三步结果
-            with open('step3_limited_ips.txt', 'w') as f:
-                for network in limited_merged:
+            # 保存限制后的激进合并结果
+            with open('8_limited_aggressive_ips.txt', 'w') as f:
+                f.write(f"# 限制后的激进合并 - 最多{max_networks}个网络\n")
+                f.write(f"# 合并后网络数量: {len(limited_aggressive)}\n")
+                for network in limited_aggressive:
                     f.write(f"{network}\n")
         else:
-            # 如果没有超过限制，复制第二步结果
-            with open('step2_aggressive_merged_ips.txt', 'r') as src:
-                with open('step3_limited_ips.txt', 'w') as dst:
+            # 如果没有超过限制，复制激进合并结果
+            with open('5_aggressive_merged_ips.txt', 'r') as src:
+                with open('8_limited_aggressive_ips.txt', 'w') as dst:
                     dst.write(src.read())
         
-        print(f"Final network count: {len(aggressive_merged)}", file=sys.stderr)
+        print(f"Processing complete. Generated multiple levels of IP aggregation.", file=sys.stderr)
         EOF
         
         chmod +x aggregate_ips.py
@@ -127,71 +194,77 @@ jobs:
         
     - name: Generate RouterOS Scripts for Each Stage
       run: |
-        # 为初始聚合生成脚本
-        echo "/ip firewall address-list" > routeros_initial_aggregated.rsc
-        echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> routeros_initial_aggregated.rsc
-        echo ":delay 60s" >> routeros_initial_aggregated.rsc
-        echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> routeros_initial_aggregated.rsc
+        # 为每个阶段生成RouterOS脚本
+        for file in {1..8}_*_ips.txt; do
+          # 提取文件名的描述部分
+          description=$(head -n 2 "$file" | tail -n 1)
+          
+          # 创建RouterOS脚本文件名
+          script_name="routeros_$(basename "$file" .txt).rsc"
+          
+          # 生成脚本
+          echo "/ip firewall address-list" > "$script_name"
+          echo "# $description" >> "$script_name"
+          echo "# 生成时间: $(date)" >> "$script_name"
+          echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> "$script_name"
+          echo ":delay 60s" >> "$script_name"
+          echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> "$script_name"
+          
+          count=0
+          # 跳过文件开头的注释行
+          tail -n +3 "$file" | while IFS= read -r line; do
+            echo "add address=$line list=blocked_abuseipdb" >> "$script_name"
+            count=$((count + 1))
+            if [ $((count % 300)) -eq 0 ]; then
+              echo ":delay 10s" >> "$script_name"
+            fi
+          done
+        done
         
-        count=0
-        while IFS= read -r line; do
-          echo "add address=$line list=blocked_abuseipdb" >> routeros_initial_aggregated.rsc
-          count=$((count + 1))
-          if [ $((count % 300)) -eq 0 ]; then
-            echo ":delay 10s" >> routeros_initial_aggregated.rsc
-          fi
-        done < initial_aggregated_ips.txt
+        # 输出各阶段的IP数量信息（仅在日志中显示）
+        echo "各阶段IP数量统计:"
+        for file in {1..8}_*_ips.txt; do
+          count=$(grep -v "^#" "$file" | wc -l)
+          echo "$(basename "$file"): $count"
+        done
         
-        # 为标准合并生成脚本
-        echo "/ip firewall address-list" > routeros_standard_merged.rsc
-        echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> routeros_standard_merged.rsc
-        echo ":delay 60s" >> routeros_standard_merged.rsc
-        echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> routeros_standard_merged.rsc
+    - name: Create Summary File
+      run: |
+        echo "# AbuseIPDB 黑名单聚合结果汇总" > SUMMARY.md
+        echo "生成时间: $(date)" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "## 各阶段文件说明" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "| 文件名 | 描述 | IP数量 |" >> SUMMARY.md
+        echo "|--------|------|--------|" >> SUMMARY.md
         
-        count=0
-        while IFS= read -r line; do
-          echo "add address=$line list=blocked_abuseipdb" >> routeros_standard_merged.rsc
-          count=$((count + 1))
-          if [ $((count % 300)) -eq 0 ]; then
-            echo ":delay 10s" >> routeros_standard_merged.rsc
-          fi
-        done < step1_standard_merged_ips.txt
+        for file in {1..8}_*_ips.txt; do
+          description=$(head -n 1 "$file" | sed 's/^# //')
+          count=$(grep -v "^#" "$file" | wc -l)
+          echo "| $(basename "$file") | $description | $count |" >> SUMMARY.md
+        done
         
-        # 为激进合并生成脚本
-        echo "/ip firewall address-list" > routeros_aggressive_merged.rsc
-        echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> routeros_aggressive_merged.rsc
-        echo ":delay 60s" >> routeros_aggressive_merged.rsc
-        echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> routeros_aggressive_merged.rsc
+        echo "" >> SUMMARY.md
+        echo "## RouterOS脚本文件" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "| 脚本文件 | 对应IP列表 | IP数量 |" >> SUMMARY.md
+        echo "|----------|------------|--------|" >> SUMMARY.md
         
-        count=0
-        while IFS= read -r line; do
-          echo "add address=$line list=blocked_abuseipdb" >> routeros_aggressive_merged.rsc
-          count=$((count + 1))
-          if [ $((count % 300)) -eq 0 ]; then
-            echo ":delay 10s" >> routeros_aggressive_merged.rsc
-          fi
-        done < step2_aggressive_merged_ips.txt
+        for script in routeros_*.rsc; do
+          ip_file=$(echo "$script" | sed 's/routeros_//' | sed 's/\.rsc//')
+          count=$(grep -v "^#" "${ip_file}.txt" | wc -l)
+          echo "| $script | ${ip_file}.txt | $count |" >> SUMMARY.md
+        done
         
-        # 为限制后的列表生成脚本
-        echo "/ip firewall address-list" > routeros_limited.rsc
-        echo "remove [/ip firewall address-list find list=blocked_abuseipdb]" >> routeros_limited.rsc
-        echo ":delay 60s" >> routeros_limited.rsc
-        echo "add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB" >> routeros_limited.rsc
-        
-        count=0
-        while IFS= read -r line; do
-          echo "add address=$line list=blocked_abuseipdb" >> routeros_limited.rsc
-          count=$((count + 1))
-          if [ $((count % 300)) -eq 0 ]; then
-            echo ":delay 10s" >> routeros_limited.rsc
-          fi
-        done < step3_limited_ips.txt
-        
-        # 输出各阶段的IP数量信息
-        echo "Initial aggregated IPs: $(wc -l < initial_aggregated_ips.txt)"
-        echo "Standard merged IPs: $(wc -l < step1_standard_merged_ips.txt)"
-        echo "Aggressive merged IPs: $(wc -l < step2_aggressive_merged_ips.txt)"
-        echo "Limited IPs: $(wc -l < step3_limited_ips.txt)"
+        echo "" >> SUMMARY.md
+        echo "## 使用建议" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "- 如果您的设备性能较好，建议使用 routeros_1_initial_aggregated_ips.rsc 或 routeros_2_standard_merged_ips.rsc" >> SUMMARY.md
+        echo "- 如果您的设备性能一般，建议使用 routeros_3_conservative_merged_ips.rsc 或 routeros_6_limited_conservative_ips.rsc" >> SUMMARY.md
+        echo "- 如果您的设备性能较差，建议使用 routeros_4_moderate_merged_ips.rsc 或 routeros_7_limited_moderate_ips.rsc" >> SUMMARY.md
+        echo "- 如果您的设备性能非常有限，建议使用 routeros_5_aggressive_merged_ips.rsc 或 routeros_8_limited_aggressive_ips.rsc" >> SUMMARY.md
+        echo "" >> SUMMARY.md
+        echo "注意：合并级别越高，可能会包含更多的非恶意IP地址。请根据您的网络环境和安全需求选择合适的列表。" >> SUMMARY.md
         
     - name: Commit
       run: |
@@ -199,15 +272,10 @@ jobs:
         git config --global user.name GitHub Action
         
         # 添加所有生成的文件
-        git add abuseipdb_blacklist_ip.txt
-        git add initial_aggregated_ips.txt
-        git add step1_standard_merged_ips.txt
-        git add step2_aggressive_merged_ips.txt
-        git add step3_limited_ips.txt
-        git add routeros_initial_aggregated.rsc
-        git add routeros_standard_merged.rsc
-        git add routeros_aggressive_merged.rsc
-        git add routeros_limited.rsc
+        git add abuseipdb_blacklist_raw.txt
+        git add {1..8}_*_ips.txt
+        git add routeros_*.rsc
+        git add SUMMARY.md
         
         git commit -m "Update IP Blacklist - $(date)"
         
