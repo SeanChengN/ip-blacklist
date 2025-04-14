@@ -19,7 +19,8 @@ jobs:
       run: |
         # 尝试下载 AbuseIPDB 黑名单
         curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=95 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" > abuseipdb_blacklist_raw.txt
-        
+        curl -G https://api.abuseipdb.com/api/v2/blacklist -d ipVersion=4 -d confidenceMinimum=100 -d limit=9999999 -d plaintext -H "Key: ${{ secrets.ABUSEIPDB_TOKEN }}" -H "Accept: text/plain" > abuseipdb_blacklist_raw_100.txt
+
         # 检查是否有错误响应
         if grep -q "errors" abuseipdb_blacklist_raw.txt; then
           echo "检测到 API 错误响应:"
