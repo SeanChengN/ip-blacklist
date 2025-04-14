@@ -1,6 +1,6 @@
 /ip firewall address-list
 # # 合并后网络数量: 9216
-# 生成时间: Mon Apr 14 02:10:10 UTC 2025
+# 生成时间: Mon Apr 14 02:14:09 UTC 2025
 remove [/ip firewall address-list find list=blocked_abuseipdb]
 :delay 60s
 add address=240.0.0.1 list=blocked_abuseipdb comment=abuseIPDB
