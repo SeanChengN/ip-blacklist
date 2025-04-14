@@ -328,6 +328,7 @@ jobs:
         
         # 添加所有生成的文件
         git add abuseipdb_blacklist_raw.txt
+        git add abuseipdb_blacklist_raw_100.txt
         git add {1..8}_*_ips.txt
         git add routeros_*.rsc
         git add SUMMARY.md
