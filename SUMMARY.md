@@ -1,31 +1,31 @@
 # AbuseIPDB 黑名单聚合结果汇总
-生成时间: Sat Oct  4 16:11:42 UTC 2025
+生成时间: Sun Oct  5 16:10:46 UTC 2025
 
 ## 各阶段文件说明
 
 | 文件名 | 描述 | IP数量 |
 |--------|------|--------|
-| 1_initial_aggregated_ips.txt | 1.2.190.229 | 9246 |
-| 2_standard_merged_ips.txt | 标准CIDR合并 - 仅合并相邻网络 | 9246 |
-| 3_conservative_merged_ips.txt | 保守合并 - 将网络扩展到/24 | 6808 |
-| 4_moderate_merged_ips.txt | 中等合并 - 将网络扩展到/20 | 5474 |
-| 5_aggressive_merged_ips.txt | 激进合并 - 将网络扩展到/16 | 3733 |
-| 6_limited_conservative_ips.txt | 保守合并 - 将网络扩展到/24 | 6808 |
-| 7_limited_moderate_ips.txt | 中等合并 - 将网络扩展到/20 | 5474 |
-| 8_limited_aggressive_ips.txt | 激进合并 - 将网络扩展到/16 | 3733 |
+| 1_initial_aggregated_ips.txt | 1.2.190.229 | 9181 |
+| 2_standard_merged_ips.txt | 标准CIDR合并 - 仅合并相邻网络 | 9181 |
+| 3_conservative_merged_ips.txt | 保守合并 - 将网络扩展到/24 | 6689 |
+| 4_moderate_merged_ips.txt | 中等合并 - 将网络扩展到/20 | 5385 |
+| 5_aggressive_merged_ips.txt | 激进合并 - 将网络扩展到/16 | 3647 |
+| 6_limited_conservative_ips.txt | 保守合并 - 将网络扩展到/24 | 6689 |
+| 7_limited_moderate_ips.txt | 中等合并 - 将网络扩展到/20 | 5385 |
+| 8_limited_aggressive_ips.txt | 激进合并 - 将网络扩展到/16 | 3647 |
 
 ## RouterOS脚本文件
 
 | 脚本文件 | 对应IP列表 | IP数量 |
 |----------|------------|--------|
-| routeros_1_initial_aggregated_ips.rsc | 1_initial_aggregated_ips.txt | 9246 |
-| routeros_2_standard_merged_ips.rsc | 2_standard_merged_ips.txt | 9246 |
-| routeros_3_conservative_merged_ips.rsc | 3_conservative_merged_ips.txt | 6808 |
-| routeros_4_moderate_merged_ips.rsc | 4_moderate_merged_ips.txt | 5474 |
-| routeros_5_aggressive_merged_ips.rsc | 5_aggressive_merged_ips.txt | 3733 |
-| routeros_6_limited_conservative_ips.rsc | 6_limited_conservative_ips.txt | 6808 |
-| routeros_7_limited_moderate_ips.rsc | 7_limited_moderate_ips.txt | 5474 |
-| routeros_8_limited_aggressive_ips.rsc | 8_limited_aggressive_ips.txt | 3733 |
+| routeros_1_initial_aggregated_ips.rsc | 1_initial_aggregated_ips.txt | 9181 |
+| routeros_2_standard_merged_ips.rsc | 2_standard_merged_ips.txt | 9181 |
+| routeros_3_conservative_merged_ips.rsc | 3_conservative_merged_ips.txt | 6689 |
+| routeros_4_moderate_merged_ips.rsc | 4_moderate_merged_ips.txt | 5385 |
+| routeros_5_aggressive_merged_ips.rsc | 5_aggressive_merged_ips.txt | 3647 |
+| routeros_6_limited_conservative_ips.rsc | 6_limited_conservative_ips.txt | 6689 |
+| routeros_7_limited_moderate_ips.rsc | 7_limited_moderate_ips.txt | 5385 |
+| routeros_8_limited_aggressive_ips.rsc | 8_limited_aggressive_ips.txt | 3647 |
 
 ## 使用建议
 
